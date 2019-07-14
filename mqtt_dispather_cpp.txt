@@ -1,0 +1,101 @@
+#include "mqtt_dispather.h"
+#include "settings.h"
+#include <QDebug>
+#include <QTimer>
+#include "message_analyzer.h"
+const QString MqttDispather::kDefaultTopic = "mnchip_mqtt_server";
+MqttDispather*  MqttDispather::_instance = 0;
+
+MqttDispather*  MqttDispather::Instance()
+{
+    if (0 == _instance) {
+        _instance = new MqttDispather();
+    }
+    return _instance;
+}
+
+void MqttDispather::Start()
+{
+    qDebug() << "mqtt connect";
+    client_->Connect();
+}
+
+MqttDispather::MqttDispather(QObject *parent) :
+    QObject(parent) , client_(new QMQTT::Client()), flag_connected_(false)
+{
+    Settings *setting = Settings::Instance();
+    client_->setHost(setting->getHost());
+    client_->setPort(setting->getPort());
+    client_->setClientId(setting->getClientId());
+    client_->setUsername(setting->getUsername());
+    client_->setPassword(setting->getPassword());
+    client_->setKeepAlive(120);
+    client_->setAutoReconnect(true);
+
+    connect(client_, SIGNAL(connected()), this, SLOT(SlotConnected()));
+    connect(client_, SIGNAL(subscribed(QString)), this, SLOT(SlotSubscribed(QString)));
+    connect(client_, SIGNAL(received(QMQTT::Message)), this, SLOT(SlotReceived(QMQTT::Message)));
+    connect(client_, SIGNAL(disconnected()), this, SLOT(SlotDisconnected()));
+    connect(client_, SIGNAL(published(QMQTT::Message)), this, SLOT(SlotPublished(QMQTT::Message)));
+}
+
+void MqttDispather::SlotConnected()
+{
+    qDebug() << "mqtt Connected";
+    flag_connected_ = true;
+    client_->subscribe(kDefaultTopic, 2);
+}
+
+void MqttDispather::SlotSubscribed(const QString &topic)
+{
+    qDebug() << "mqtt subscribed; topic: " << topic;
+}
+
+void MqttDispather::SlotReceived(const QMQTT::Message &message)
+{
+    qDebug() << QString("mqtt received; topic:%1; payload:%2").arg(message.topic()).arg(message.payload().constData());
+
+    QMQTT::Message new_message;
+    if (MessageAnalyzer::Analyze(message, new_message)) {
+        qDebug() << new_message.topic() << new_message.payload();
+        new_message.setQos(2);
+        client_->publish(new_message);
+    }
+}
+
+void MqttDispather::SlotDisconnected()
+{
+    qWarning() << "mqtt disconnect";
+    flag_connected_ = false;
+    SlotReConnect();
+}
+
+void MqttDispather::SlotPublished(const QMQTT::Message &message)
+{
+    qDebug() << QString("mqtt published; topic:%1 %2").arg(message.topic()).arg(message.payload().constData());
+}
+
+void MqttDispather::SlotReConnect()
+{
+    static int timeout = 1000;
+    if (!flag_connected_) {
+        qDebug() << "mqtt reconnected; next time(ms):" << timeout;
+        Start();
+        QTimer::singleShot(timeout, this, SLOT(SlotReConnect()));
+        if (timeout < 1800000 ) {
+            timeout *= 2;
+        }
+    } else {
+        timeout = 1000;
+        qDebug() << "mqt reconnected ok";
+    }
+
+}
+/*
+bool MqttDispather::GenerateNewMessage(const QMQTT::Message &old_message, QMQTT::Message &new_message)
+{
+    new_message.setPayload(old_message.payload());
+    new_message.setTopic("topic1");
+    return true;
+}
+*/

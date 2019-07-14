@@ -1,0 +1,40 @@
+#ifndef MQTT_DISPATHER_H
+#define MQTT_DISPATHER_H
+
+#include <QObject>
+#include "qmqtt.h"
+
+class MqttDispather : public QObject
+{
+    Q_OBJECT
+public:
+    static MqttDispather *Instance();
+
+    void Start(void);
+
+protected:
+    explicit MqttDispather(QObject *parent = 0);
+
+signals:
+
+public slots:
+    void SlotReceived(const QMQTT::Message &message);
+private slots:
+    void SlotConnected(void);
+    void SlotSubscribed(const QString &topic);
+    void SlotDisconnected(void);
+    void SlotPublished(const QMQTT::Message &message);
+
+    void SlotReConnect(void);
+private:
+
+    const static QString kDefaultTopic;
+
+    QMQTT::Client *client_;
+    bool flag_connected_;
+
+    static MqttDispather *_instance;
+
+};
+
+#endif // MQTT_DISPATHER_H
